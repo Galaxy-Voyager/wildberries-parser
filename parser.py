@@ -1,32 +1,22 @@
 import pandas as pd
 import time
 from search_products import search_products
-from get_card_details import get_product_card, get_image_urls
+from get_card_details import get_product_card, get_image_urls, get_product_stocks
 
 
 def parse_wildberries(query="пальто из натуральной шерсти"):
-    """
-    Собирает данные о товарах и сохраняет в excel
-    """
-
     print("=" * 50)
     print("Парсер Wildberries")
     print("=" * 50)
-    print(f"Поисковый запрос: {query}")
-    print()
+    print(f"Поисковый запрос: {query}\n")
 
     products = search_products(query)
-
     if not products:
         print("Товары не найдены")
         return
 
-    # Ограничение до 10 товаров
-    products = products[:10]
-    print(f"Обработка первых {len(products)} товаров")
-    print()
-
-    time.sleep(2)
+    print(f"Обработка {len(products)} товаров\n")
+    time.sleep(0.5)
 
     print("Сбор информации...")
     print("-" * 50)
@@ -36,48 +26,53 @@ def parse_wildberries(query="пальто из натуральной шерст
     for idx, product in enumerate(products, 1):
         print(f"[{idx}/{len(products)}] Обработка товара...")
 
-        # --- Данные из поиска ---
+        nm_id = product.get("id")
+        if not nm_id:
+            print("  Артикул не найден")
+            continue
 
-        # Цена
+        # Данные из поиска
         price = product.get("sizes", [{}])[0].get("price", {}).get("product", 0) / 100
 
-        # Размеры
         sizes_list = []
-        total_quantity = 0
         for size in product.get("sizes", []):
-            size_name = size.get("name")
-            if size_name:
-                sizes_list.append(size_name)
-            total_quantity += size.get("totalQuantity", 0)
+            if size.get("name"):
+                sizes_list.append(size.get("name"))
         sizes_str = ", ".join(sizes_list) if sizes_list else ""
 
-        # Ссылка на товар
         product_link = f"https://www.wildberries.ru/catalog/{nm_id}/detail.aspx"
-
-        # Селлер
         supplier_id = product.get("supplierId")
         seller_link = f"https://www.wildberries.ru/seller/{supplier_id}" if supplier_id else ""
         seller_name = product.get("supplier", product.get("brand", ""))
 
-        # --- Данные из карточки ---
+        rating = product.get("reviewRating", product.get("rating", 0))
+        feedbacks = product.get("feedbacks", 0)
 
-        card_data = get_product_card(nm_id)
+        # Данные из карточки
+        card_data, basket = get_product_card(nm_id)
 
         description = ""
         characteristics = ""
+        country = ""
+        photo_count = 5
 
         if card_data:
             description = card_data.get("description", "")
             options = card_data.get("options", [])
             if options:
                 characteristics = "; ".join([f"{o.get('name')}: {o.get('value')}" for o in options])
+                for opt in options:
+                    if opt.get("name") == "Страна производства":
+                        country = opt.get("value", "")
+                        break
+            photo_count = card_data.get("media", {}).get("photo_count", 5)
 
-        # Изображения
-        images_str = get_image_urls(nm_id)
+        # Остатки
+        total_quantity = get_product_stocks(nm_id)
 
-        # --- Формирование записи ---
+        images_str = get_image_urls(nm_id, basket, photo_count) if basket else ""
 
-        item = {
+        items.append({
             "Ссылка на товар": product_link,
             "Артикул": nm_id,
             "Название": product.get("name", ""),
@@ -89,21 +84,29 @@ def parse_wildberries(query="пальто из натуральной шерст
             "Ссылка на селлера": seller_link,
             "Размеры": sizes_str,
             "Остатки": total_quantity,
-            "Рейтинг": product.get("rating", 0),
-            "Количество отзывов": product.get("feedbacks", 0)
-        }
+            "Рейтинг": rating,
+            "Количество отзывов": feedbacks,
+            "Страна производства": country
+        })
 
-        items.append(item)
-
-
-    # Сохранение результатов
     print()
     print("Сохранение результатов...")
     print("-" * 50)
 
     df = pd.DataFrame(items)
-    df.to_excel("catalog.xlsx", index=False)
-    print(f"Сохранено {len(items)} товаров в catalog.xlsx")
+
+    df_full = df.drop(columns=["Страна производства"])
+    df_full.to_excel("catalog_full.xlsx", index=False)
+    print(f"Сохранено {len(items)} товаров в catalog_full.xlsx")
+
+    filtered_df = df[
+        (df["Рейтинг"] >= 4.5) &
+        (df["Цена"] <= 10000) &
+        (df["Страна производства"].str.contains("Россия", na=False, case=False))
+    ]
+    filtered_df = filtered_df.drop(columns=["Страна производства"])
+    filtered_df.to_excel("catalog_filtered.xlsx", index=False)
+    print(f"Сохранено {len(filtered_df)} товаров в catalog_filtered.xlsx")
 
     print()
     print("Готово!")
