@@ -4,18 +4,22 @@ from search_products import search_products
 from get_card_details import get_product_card, get_image_urls, get_product_stocks
 
 
-def parse_wildberries(query="пальто из натуральной шерсти"):
+def parse_wildberries(query="пальто из натуральной шерсти", max_pages=None):
+    """
+    Собирает данные о товарах и сохраняет в excel
+    max_pages: ограничение на количество страниц (None = все страницы)
+    """
     print("=" * 50)
     print("Парсер Wildberries")
     print("=" * 50)
     print(f"Поисковый запрос: {query}\n")
 
-    products = search_products(query)
+    products = search_products(query, max_pages=max_pages)
     if not products:
         print("Товары не найдены")
         return
 
-    print(f"Обработка {len(products)} товаров\n")
+    print(f"\nОбработка {len(products)} товаров\n")
     time.sleep(0.5)
 
     print("Сбор информации...")
